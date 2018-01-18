@@ -1,0 +1,487 @@
+<!doctype html>
+
+<meta charset="utf-8">
+<title>Dagre D3 Renderer Demo</title>
+
+<script src="./resource/d3.min.js" charset="utf-8"></script>
+<script src="./resource/dagre-d3.min.js"></script>
+<script src="./resource/jquery-1.9.1.min.js"></script>
+
+<style>
+
+  body {
+    /*position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: 0;*/
+    height: 3000px;
+    margin: 0;
+    padding: 0;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serf;
+    background: #333;
+  }
+
+  .live.map {
+    width: 100%;
+    height: 100%;
+  }
+
+  svg {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .live.map text {
+    font-weight: 300;
+    font-size: 14px;
+  }
+
+  .live.map .node rect {
+    stroke-width: 1.5px;
+    stroke: #bbb;
+    fill: #666;
+  }
+
+  .live.map .status {
+    height: 100%;
+    width: 15px;
+    display: block;
+    float: left;
+    border-top-left-radius: 5px;
+    border-bottom-left-radius: 5px;
+    margin-right: 4px;
+  }
+
+  .live.map .running .status {
+    background-color: #7f7;
+  }
+
+  .live.map .running.warn .status {
+    background-color: #ffed68;
+  }
+
+  .live.map .stopped .status {
+    background-color: #f77;
+  }
+
+  .live.map .warn .queue {
+    color: #f77;
+  }
+
+  .live.map .consumers {
+    margin-right: 2px;
+  }
+
+  .live.map .consumers,
+  .live.map .name {
+    margin-top: 4px;
+  }
+
+  .live.map .node g div {
+    color: #fff;
+  }
+
+  .live.map .node g div span.consumers {
+    display: inline-block;
+    width: 20px;
+  }
+
+  .live.map .edgeLabel text {
+    width: 50px;
+    fill: #fff;
+  }
+  /*控制线的粗细*/
+  .live.map .edgePath path {
+    stroke: #999;
+    stroke-width: 5.5px;
+    fill: #999;
+  }
+  .show {
+    display: block;
+    height: 300px;
+    background-color: black;
+  }
+  .close {
+    display: none;
+  }
+  .alltable {
+    width: 300px;
+  }
+  .xitong {
+    border-bottom: 1px solid white;
+    margin-bottom: 5px;
+    display: inline-block;
+    width: 240px;
+  }
+  .databaseitem {
+    border:1px solid white;
+    margin-bottom: 10px;
+  }
+  .databaseitem table {
+    border-collapse: collapse;
+    border: 1px solid greenyellow;
+    margin-bottom: 6px;
+  }
+  .databasetitle {
+    margin-bottom: 4px;
+    background-color: red;
+  }
+  .tabletitle {
+    background-color: green;
+    margin: 4px;
+  }
+</style>
+
+<body>
+<div class="live map">
+  <svg><g/></svg>
+</div>
+
+<script>
+
+  var workers = {
+    "identifier": {
+      "consumers": "系统A", 
+    },
+    "lost-and-found": {
+      "consumers": "系统F",
+      "inputQueue": "identifier",
+      "inputThroughput": 50
+    },
+    "monitor": {
+      "consumers": "系统B",
+      "inputQueue": "identifier",
+      "fieldcontainer":{
+          "数据库1":{
+             "tablecontainer":[
+               {
+                  "tablename":"表1",
+                  "tablefield":['字段1','字段2'],
+                  "showfield":false
+               },
+               {
+                  "tablename":"表2",
+                  "tablefield":['字段1','字段2'],
+                  "showfield":false
+               }
+             ],
+             "show":false
+          },
+          "数据库2":{
+            "tablecontainer":[
+               {
+                  "tablename":"表1",
+                  "tablefield":['字段1','字段2'],
+                  "showfield":false
+               },
+               {
+                  "tablename":"表2",
+                  "tablefield":['字段1','字段2'],
+                  "showfield":false
+               }
+             ],
+            "show":false
+          }       
+      },
+      "inputThroughput": 50
+    },
+    "meta-enricher": {
+      "consumers": "系统C",
+      "inputQueue": "identifier",
+      "fieldcontainer":{
+          "数据库1":{
+             "tablecontainer":[
+               {
+                  "tablename":"表1",
+                  "tablefield":['字段1','字段2'],
+                  "showfield":false
+               },
+               {
+                  "tablename":"表2",
+                  "tablefield":['字段1','字段2'],
+                  "showfield":false
+               }
+             ],
+             "show":false
+          },
+          "数据库2":{
+            "tablecontainer":[
+               {
+                  "tablename":"表1",
+                  "tablefield":['字段1','字段2'],
+                  "showfield":false
+               },
+               {
+                  "tablename":"表2",
+                  "tablefield":['字段1','字段2'],
+                  "showfield":false
+               }
+             ],
+            "show":false
+          }       
+      },
+      "inputThroughput": 50
+    },
+    "geo-enricher": {
+      "consumers": "系统D",
+      "inputQueue": "meta-enricher",
+      "inputThroughput": 50
+    },
+    "elasticsearch-writer": {
+      "consumers": "系统E",
+      "inputQueue": "geo-enricher",
+      "inputThroughput": 50
+    }
+  };
+
+  // Set up zoom support use d3
+  var svg = d3.select("svg"),
+      inner = svg.select("g"),
+      zoom = d3.zoom().on("zoom", function() {
+        inner.attr("transform", d3.event.transform);
+      });
+      // drag = d3.drag().on("drag", function() {
+      //   console.log('拖拽触发了')
+      // });
+  // 控制拖拽触发zoom,同时禁止双击触发zoom和鼠标滚动触发zoom 
+  svg.call(zoom).on('dblclick.zoom', null).on('wheel.zoom',null);
+
+  var render = new dagreD3.render();
+
+  // Left-to-right layout
+  var g = new dagreD3.graphlib.Graph();
+  g.setGraph({
+    nodesep: 70,
+    ranksep: 50,
+    rankdir: "LR",
+    marginx: 20,
+    marginy: 20
+  });
+
+// 数据库循环生成
+  function showdatabase(fieldcontainer){
+      var html="<div class=alldatabase>"
+      for (var database in fieldcontainer) {
+          html+="<div class=databaseitem><div class=databasetitle>"+database+"</div>";
+          if(fieldcontainer[database].show){
+            html+=showtable(fieldcontainer[database].tablecontainer);
+          }
+          html+="</div>";
+      }
+      html+="</div>";
+      return html;
+  }
+// 数据表循环生成
+  function showtable(tablecontainer){
+    var html='';
+    for (var i in tablecontainer) {
+      html+="<div class=tabletitle tableindex="+i+">"+tablecontainer[i].tablename+"</div>";
+      if (tablecontainer[i].showfield) {
+        html+="<table>";
+        for (var j in tablecontainer[i].tablefield) {
+          html+="<tr><td>"+tablecontainer[i].tablefield[j]+"</td></tr>";
+        }
+        html+="</table>";
+      }      
+    }
+    return html;
+  }
+
+  function draw(isUpdate) {
+    for (var id in workers) {
+      var worker = workers[id];
+      var className = worker.consumers ? "running" : "stopped";
+      var html = "<div>";
+      html += "<a class=xitong href=http://www.baidu.com>"+worker.consumers+"</a>";
+      html += showdatabase(worker.fieldcontainer);
+      html += "</div>";
+      g.setNode(id, {
+        labelType: "html",
+        label: html,
+        rx: 5,
+        ry: 5,
+        padding: 0,
+        class: className
+      });
+
+      if (worker.inputQueue) {
+        g.setEdge(worker.inputQueue, id, {
+          label: worker.inputThroughput + "/s",
+          arrowhead:'undirected',       //normal, vee, undirected
+          width: 40
+        });
+      }
+    }
+
+    inner.call(render, g);
+
+    // 给每一个节点绑定点击事件
+    var styleTooltip = function(name) {
+      return "<p class='name'>" + name + "</p>";
+    };
+    inner.selectAll("g.node")
+      .attr("title", function(v) { return styleTooltip(v) })
+      .each(function(v) { 
+        var currentnode=v;
+        // 点击数据库事件
+        $(this).on('click','.databasetitle',function(event){
+            event.stopPropagation();
+            // console.log(g.node(currentnode));               
+            // console.log(currentnode);
+            var key=$(this).html();
+            workers[currentnode].fieldcontainer[key].show=!workers[currentnode].fieldcontainer[key].show;
+            draw();
+        }) 
+        // 点击数据库中表的点击事件
+        $(this).on('click','.tabletitle',function(event){
+            event.stopPropagation();  
+            var key=$(this).parent().find('.databasetitle').html();
+            var position=parseInt($(this).attr("tableindex"));
+            workers[currentnode].fieldcontainer[key].tablecontainer[position].showfield=!workers[currentnode].fieldcontainer[key].tablecontainer[position].showfield;
+            draw();
+        })
+      });
+    // 给每一条线加上点击事件
+    inner.selectAll("g.edgePath")
+      .each(function(solid) { 
+        var currentnode=solid;
+        $(this).click(function(){
+            alert(currentnode);
+            window.location.href="http://www.baidu.com";
+        }) 
+      });
+    // 节点以及线单个拖拽
+    // initDragCapabilities(g,svg);
+  }
+
+  // Initial draw, once the DOM is ready
+  document.addEventListener("DOMContentLoaded", draw);
+
+
+  function initDragCapabilities(g,svg){
+
+      svg.selectAll("g.node rect")
+          .attr("id", function (d) {
+          return "node" + d;
+      });
+      svg.selectAll("g.edgePath path")
+          .attr("id", function (e) {
+          return e.v + "-" + e.w;
+      })
+      g.nodes().forEach(function (v) {
+          var node = g.node(v);
+          node.customId = "node" + v;
+      })
+      g.edges().forEach(function (e) {
+          var edge = g.edge(e.v, e.w);
+          edge.customId = e.v + "-" + e.w
+      });
+
+      var nodeDrag = d3.drag()
+          .on("start", dragstart)
+          .on("drag", dragmove);
+
+      var edgeDrag = d3.drag()
+          .on("start", dragstart)
+          .on('drag', function (d) {
+
+          translateEdge(g.edge(d.v, d.w), d3.event.dx, d3.event.dy);
+          $('#' + g.edge(d.v, d.w).customId).attr('d', calcPoints(d));
+      });
+
+      // nodeDrag.call(svg.selectAll("g.node"));
+      // edgeDrag.call(svg.selectAll("g.edgePath"));
+      svg.selectAll("g.node").call(nodeDrag);
+      svg.selectAll("g.edgePath").call(edgeDrag);
+
+      function dragstart(d) {
+          d3.event.sourceEvent.stopPropagation();
+          d3.event.sourceEvent.bubbles=false;
+      }
+
+      function dragmove(d) {
+          var node = d3.select(this),
+              selectedNode = g.node(d);
+          var prevX = selectedNode.x,
+              prevY = selectedNode.y;
+
+          selectedNode.x += d3.event.dx;
+          selectedNode.y += d3.event.dy;
+          node.attr('transform', 'translate(' + selectedNode.x + ',' + selectedNode.y + ')');
+
+          var dx = selectedNode.x - prevX,
+              dy = selectedNode.y - prevY;
+
+          g.edges().forEach(function (e) {
+              if (e.v == d || e.w == d) {
+                  edge = g.edge(e.v, e.w);
+                  translateEdge(g.edge(e.v, e.w), dx, dy);
+                  $('#' + edge.customId).attr('d', calcPoints(e));
+              }
+          })
+      }
+
+
+      function translateEdge(e, dx, dy) {
+          e.points.forEach(function (p) {
+              p.x = p.x + dx;
+              p.y = p.y + dy;
+          });
+      }
+
+      //taken from dagre-d3 source code (not the exact same)
+      function calcPoints(e) {
+          var edge = g.edge(e.v, e.w),
+              tail = g.node(e.v),
+              head = g.node(e.w);
+          var points = edge.points.slice(1, edge.points.length - 1);
+          var afterslice = edge.points.slice(1, edge.points.length - 1)
+          points.unshift(intersectRect(tail, points[0]));
+          points.push(intersectRect(head, points[points.length - 1]));
+          return d3.svg.line()
+              .x(function (d) {
+              return d.x;
+          })
+              .y(function (d) {
+              return d.y;
+          })
+              .interpolate("basis")
+          (points);
+      }
+
+      //taken from dagre-d3 source code (not the exact same)
+      function intersectRect(node, point) {
+          var x = node.x;
+          var y = node.y;
+          var dx = point.x - x;
+          var dy = point.y - y;
+          var w = $("#" + node.customId).attr('width') / 2;
+          var h = $("#" + node.customId).attr('height') / 2;
+          var sx = 0,
+              sy = 0;
+          if (Math.abs(dy) * w > Math.abs(dx) * h) {
+              // Intersection is top or bottom of rect.
+              if (dy < 0) {
+                  h = -h;
+              }
+              sx = dy === 0 ? 0 : h * dx / dy;
+              sy = h;
+          } else {
+              // Intersection is left or right of rect.
+              if (dx < 0) {
+                  w = -w;
+              }
+              sx = w;
+              sy = dx === 0 ? 0 : w * dy / dx;
+          }
+          return {
+              x: x + sx,
+              y: y + sy
+          };
+      }
+  };
+</script>
+</body>
+</html>
